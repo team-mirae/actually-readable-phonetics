@@ -47,12 +47,21 @@
   .canvas-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
   #canvas { width: min(520px, 90vw); height: min(520px, 90vw); display: block; touch-action: none; cursor: crosshair;
             background: var(--panel); }
-  .side { display: flex; flex-direction: column; gap: 14px; min-width: 240px; }
+  .side { display: flex; flex-direction: column; gap: 14px; min-width: 240px; max-width: 380px; flex: 1; }
   .group { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .group h3 { width: 100%; margin: 0 0 2px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
   .info { color: var(--muted); font-size: 13px; }
   .info b { color: var(--ink); }
   input[type=range] { width: 140px; }
+  .sounds { display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; align-items: center; width: 100%; }
+  .sounds label { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .sounds input { font: 16px/1.3 "Charis SIL", "Doulos SIL", "Gentium Plus", "Noto Serif", serif; padding: 5px 8px;
+                  border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); min-width: 0; }
+  .sounds input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .sounds input:disabled { opacity: .4; }
+  .group .hint { font-size: 12px; color: var(--muted); width: 100%; }
+  .key .snd { position: absolute; right: 3px; bottom: 1px; font-size: 9px; color: var(--muted); max-width: 90%;
+              overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 </style>
 </head>
@@ -78,6 +87,15 @@
   </div>
   <div class="side">
     <div class="info" id="info"></div>
+    <div class="group">
+      <h3>Pronunciation</h3>
+      <div class="sounds">
+        <label for="snd0">0 (+ ゛)</label><input id="snd0" data-level="0" autocomplete="off" spellcheck="false">
+        <label for="snd1">1 (default)</label><input id="snd1" data-level="1" autocomplete="off" spellcheck="false">
+        <label for="snd2">2 (+ ゜)</label><input id="snd2" data-level="2" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="hint">IPA suggested, e.g. <i>b · p · p͈</i>. Leave a level blank if this letter doesn't take that modifier.</div>
+    </div>
     <div class="group">
       <h3>Tool</h3>
       <button data-tool="pen" class="on">Pen</button>
@@ -148,12 +166,20 @@ function load() {
 }
 function persist() { localStorage.setItem(STORE, JSON.stringify(glyphs)); }
 const strokesOf = code => glyphs[code]?.strokes ?? [];
+const soundsOf = code => glyphs[code]?.sounds ?? ["", "", ""];
+const hasSounds = code => soundsOf(code).some(x => x.trim());
+// Store strokes and sounds together; drop the entry only when both are empty.
+function setGlyph(code, strokes = strokesOf(code), sounds = soundsOf(code)) {
+  if (strokes.length || sounds.some(x => x.trim())) glyphs[code] = { strokes, sounds };
+  else delete glyphs[code];
+}
+const soundSummary = code => soundsOf(code).map((x, i) => `${i}: ${x.trim() || "—"}`).join("  ");
 const hist = code => (history[code] ??= { undo: [], redo: [] });
 
 function commit(code, next) {
   hist(code).undo.push(structuredClone(strokesOf(code)));
   hist(code).redo = [];
-  if (next.length) glyphs[code] = { strokes: next }; else delete glyphs[code];
+  setGlyph(code, next);
   persist(); render();
 }
 
@@ -195,7 +221,9 @@ const strokesSvg = (strokes, color = "currentColor") => strokes.map(s =>
   `<path d="${pathD(s.pts)}" stroke="${color}" stroke-width="${s.w}"/>`).join("");
 function glyphSvg(code) {
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000" data-arp-key="${code}">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000" data-arp-key="${code}"${
+  soundsOf(code).map((x, i) => ` data-arp-level${i}="${esc(x.trim())}"`).join("")}>
+<title>ARP ${code} — ${esc(soundSummary(code))}</title>
 <g fill="none" stroke-linecap="round" stroke-linejoin="round">${strokesSvg(strokesOf(code), "#000")}</g>
 </svg>
 `;
@@ -213,8 +241,12 @@ function sheetSvg() {
         if (k.type === MOD) {
           out += `<text x="${x + w / 2}" y="${y + U * 0.72}" font-size="${U * 0.6}" text-anchor="middle" fill="#000">${MODS[k.code].ch}</text>`;
         } else {
-          const s = 0.8 * U / 1000;
-          out += `<g transform="translate(${x + 0.1 * U} ${y + 0.1 * U}) scale(${s})" fill="none" stroke-linecap="round" stroke-linejoin="round">${strokesSvg(strokesOf(k.code), "#000")}</g>`;
+          const s = 0.62 * U / 1000;
+          out += `<g transform="translate(${x + 0.19 * U} ${y + 0.12 * U}) scale(${s})" fill="none" stroke-linecap="round" stroke-linejoin="round">${strokesSvg(strokesOf(k.code), "#000")}</g>`;
+          if (hasSounds(k.code)) {
+            const t = soundsOf(k.code).map(v => esc(v.trim() || "–")).join(" · ");
+            out += `<text x="${x + w / 2}" y="${y + U - 10}" font-size="14" text-anchor="middle" fill="#333" font-family="'Charis SIL','Doulos SIL','Noto Serif',serif">${t}</text>`;
+          }
         }
       }
       x += w + G;
@@ -248,8 +280,9 @@ function renderKeyboard() {
       if (k.type === OFF) { el.textContent = k.legend; }
       else {
         el.innerHTML = `<span class="legend">${esc(k.legend)}</span>` + (k.type === MOD ? MODS[k.code].ch :
-          `<svg viewBox="0 0 1000 1000"><g fill="none" stroke-linecap="round" stroke-linejoin="round">${strokesSvg(strokesOf(k.code))}</g></svg>`);
-        el.title = k.type === MOD ? MODS[k.code].name : `${k.code} (JIS ${k.legend})`;
+          `<svg viewBox="0 0 1000 1000"><g fill="none" stroke-linecap="round" stroke-linejoin="round">${strokesSvg(strokesOf(k.code))}</g></svg>` +
+          (soundsOf(k.code)[1].trim() ? `<span class="snd">${esc(soundsOf(k.code)[1].trim())}</span>` : ""));
+        el.title = k.type === MOD ? MODS[k.code].name : `${k.code} (JIS ${k.legend})` + (hasSounds(k.code) ? `\n${soundSummary(k.code)}` : "");
         el.onclick = () => select(k.code);
       }
       div.append(el);
@@ -290,6 +323,7 @@ function renderCanvas() {
     ? `<b>${mod.ch}</b> on JIS <b>${esc(k.legend)}</b> — ${mod.name}.<br>Fixed character; not drawable.`
     : `Slot <b>${selected}</b> (JIS <b>${esc(k.legend)}</b>, unshifted) — ${strokesOf(selected).length} strokes`;
   const h = hist(selected), dis = !!mod;
+  soundInputs.forEach((el, i) => { el.value = dis ? "" : soundsOf(selected)[i]; el.disabled = dis; });
   document.getElementById("undo").disabled = dis || !h.undo.length;
   document.getElementById("redo").disabled = dis || !h.redo.length;
   document.getElementById("clear").disabled = dis || !strokesOf(selected).length;
@@ -346,16 +380,26 @@ function undo() {
   const h = hist(selected); if (!h.undo.length) return;
   h.redo.push(structuredClone(strokesOf(selected)));
   const prev = h.undo.pop();
-  if (prev.length) glyphs[selected] = { strokes: prev }; else delete glyphs[selected];
+  setGlyph(selected, prev);
   persist(); render();
 }
 function redo() {
   const h = hist(selected); if (!h.redo.length) return;
   h.undo.push(structuredClone(strokesOf(selected)));
   const next = h.redo.pop();
-  if (next.length) glyphs[selected] = { strokes: next }; else delete glyphs[selected];
+  setGlyph(selected, next);
   persist(); render();
 }
+
+// ---- pronunciation ----
+const soundInputs = [0, 1, 2].map(i => document.getElementById(`snd${i}`));
+soundInputs.forEach((el, i) => el.addEventListener("input", () => {
+  if (MODS[selected]) return;
+  const sounds = [...soundsOf(selected)];
+  sounds[i] = el.value;
+  setGlyph(selected, strokesOf(selected), sounds);
+  persist(); renderKeyboard();   // not renderCanvas: keep the caret where it is
+}));
 
 // ---- controls ----
 document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => {
@@ -373,7 +417,7 @@ document.getElementById("clear").onclick = () => commit(selected, []);
 document.getElementById("export-one").onclick = () => download(`arp-${selected}.svg`, glyphSvg(selected), "image/svg+xml");
 document.getElementById("export-sheet").onclick = () => download("arp-keyboard.svg", sheetSvg(), "image/svg+xml");
 document.getElementById("save-json").onclick = () =>
-  download("arp-glyphs.json", JSON.stringify({ format: "arp-glyphs", version: 1, viewBox: [0, 0, 1000, 1000], glyphs }, null, 1), "application/json");
+  download("arp-glyphs.json", JSON.stringify({ format: "arp-glyphs", version: 2, levels: ["゛ 0", "1", "゜ 2"], viewBox: [0, 0, 1000, 1000], glyphs }, null, 1), "application/json");
 document.getElementById("load-json").onchange = async e => {
   const file = e.target.files[0]; e.target.value = "";
   if (!file) return;
@@ -381,7 +425,13 @@ document.getElementById("load-json").onchange = async e => {
     const data = JSON.parse(await file.text());
     if (data.format !== "arp-glyphs" || typeof data.glyphs !== "object") throw new Error("not an ARP glyph project");
     const valid = new Set(SLOT_KEYS.map(k => k.code));
-    glyphs = Object.fromEntries(Object.entries(data.glyphs).filter(([k, g]) => valid.has(k) && Array.isArray(g?.strokes)));
+    glyphs = {};
+    for (const [k, g] of Object.entries(data.glyphs)) {
+      if (!valid.has(k) || !g || typeof g !== "object") continue;
+      const strokes = Array.isArray(g.strokes) ? g.strokes : [];
+      const sounds = [0, 1, 2].map(i => typeof g.sounds?.[i] === "string" ? g.sounds[i] : "");
+      setGlyph(k, strokes, sounds);
+    }
     for (const k in history) delete history[k];
     persist(); render();
   } catch (err) {
@@ -390,7 +440,7 @@ document.getElementById("load-json").onchange = async e => {
 };
 
 document.addEventListener("keydown", e => {
-  if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ" && !e.target.matches("input")) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.target.matches("input")) return;
   if (ROWS.flat().some(k => k.code === e.code && k.type !== OFF)) { e.preventDefault(); select(e.code); }
 });

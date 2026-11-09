@@ -19,6 +19,7 @@ The letters themselves (shapes, sounds, keys) are not designed yet. See [`docs/s
 
 - Shows an empty JIS keyboard with only ゛ and ゜ in place. Click a key, or press it on a JIS keyboard, to draw its letter.
 - Pen, straight line, erase stroke, stroke width, snap to grid, undo/redo.
+- Write each letter's pronunciation for all three tense levels: 0 (+ ゛), 1 (default), 2 (+ ゜). Leave a level blank if the letter doesn't take that modifier. Pronunciations are saved in the project file, embedded in glyph SVGs (`data-arp-level0..2` and `<title>`), and printed under each key in the sheet SVG.
 - Drawings save automatically in the browser. **Save project** / **Load project** exchange a `.json` file.
 - **Download this glyph SVG** exports one 1000×1000 glyph; **Download sheet SVG** exports the whole keyboard.
 - Counts drawn letters against the 44 limit.
