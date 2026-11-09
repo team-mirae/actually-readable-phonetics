@@ -1,0 +1,33 @@
+{
+  "name": "actually-readable-phonetics",
+  "version": "0.0.0",
+  "description": "ARP (Actually Readable Phonetics): one script for every syllable of English, Korean and Japanese, written in plain ASCII and rendered by a parser.",
+  "license": "CC0-1.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/team-mirae/actually-readable-phonetics.git"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
