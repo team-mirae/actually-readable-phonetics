@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARP Glyph Editor</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #fff; --ink: #1d1d1f; --muted: #8a8a8e; --line: #d9d7d2;
+    --key: #fff; --key-off: #ecebe7; --accent: #2f6fed; --warn: #d1352b;
+    --u: 52px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1b1d; --panel: #242427; --ink: #ececee; --muted: #8c8c92; --line: #3a3a3f;
+            --key: #2c2c30; --key-off: #222225; --accent: #6b9bff; --warn: #ff6b5f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Hiragino Sans", "Apple SD Gothic Neo", sans-serif;
+         background: var(--bg); color: var(--ink); }
+  header { display: flex; align-items: baseline; gap: 16px; padding: 16px 24px 8px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .count { color: var(--muted); }
+  header .count.over { color: var(--warn); font-weight: 600; }
+  header .spacer { flex: 1; }
+  button, label.btn { font: inherit; padding: 6px 12px; border: 1px solid var(--line); background: var(--panel);
+           color: var(--ink); border-radius: 6px; cursor: pointer; }
+  button:hover, label.btn:hover { border-color: var(--accent); }
+  button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .4; cursor: default; }
+
+  /* keyboard */
+  .kb { padding: 8px 24px 16px; overflow-x: auto; }
+  .kb-inner { display: inline-flex; flex-direction: column; gap: 4px; padding: 10px; background: var(--line); border-radius: 10px; }
+  .row { display: flex; gap: 4px; }
+  .key { height: var(--u); border-radius: 6px; background: var(--key); position: relative; flex: none;
+         display: grid; place-items: center; user-select: none; }
+  .key.off { background: var(--key-off); color: var(--muted); font-size: 11px; }
+  .key.slot { cursor: pointer; }
+  .key.slot:hover { outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent); }
+  .key.sel { outline: 2px solid var(--accent) !important; }
+  .key .legend { position: absolute; left: 4px; top: 2px; font-size: 9px; color: var(--muted); opacity: .55; }
+  .key svg { width: 70%; height: 70%; }
+  .key.mod { font-size: 46px; line-height: 1; cursor: pointer; }
+
+  /* editor */
+  main { display: flex; gap: 24px; padding: 0 24px 24px; flex-wrap: wrap; align-items: flex-start; }
+  .canvas-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  #canvas { width: min(520px, 90vw); height: min(520px, 90vw); display: block; touch-action: none; cursor: crosshair;
+            background: var(--panel); }
+  .side { display: flex; flex-direction: column; gap: 14px; min-width: 240px; }
+  .group { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .group h3 { width: 100%; margin: 0 0 2px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .info { color: var(--muted); font-size: 13px; }
+  .info b { color: var(--ink); }
+  input[type=range] { width: 140px; }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ARP Glyph Editor</h1>
+  <span id="count" class="count"></span>
+  <span class="spacer"></span>
+  <button id="save-json" title="Save every glyph to a .json project file">Save project</button>
+  <label class="btn" title="Load a .json project file">Load project<input id="load-json" type="file" accept=".json,application/json" hidden></label>
+  <button id="export-sheet" title="Download the whole keyboard as one SVG">Download sheet SVG</button>
+</header>
+
+<div class="kb"><div class="kb-inner" id="kb"></div></div>
+
+<main>
+  <div class="canvas-wrap">
+    <svg id="canvas" viewBox="0 0 1000 1000" xmlns="http://www.w3.org/2000/svg">
+      <g id="guides"></g>
+      <g id="strokes" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"></g>
+      <g id="preview" fill="none" stroke="var(--accent)" stroke-linecap="round" stroke-linejoin="round"></g>
+    </svg>
+  </div>
+  <div class="side">
+    <div class="info" id="info"></div>
+    <div class="group">
+      <h3>Tool</h3>
+      <button data-tool="pen" class="on">Pen</button>
+      <button data-tool="line">Line</button>
+      <button data-tool="erase">Erase stroke</button>
+    </div>
+    <div class="group">
+      <h3>Stroke width <span id="width-val"></span></h3>
+      <input id="width" type="range" min="10" max="160" step="5" value="70">
+    </div>
+    <div class="group">
+      <h3>Guides</h3>
+      <button id="snap">Snap to grid</button>
+      <button id="grid">Show grid</button>
+    </div>
+    <div class="group">
+      <h3>Edit</h3>
+      <button id="undo">Undo</button>
+      <button id="redo">Redo</button>
+      <button id="clear">Clear glyph</button>
+    </div>
+    <div class="group">
+      <h3>Export</h3>
+      <button id="export-one">Download this glyph SVG</button>
+    </div>
+    <div class="info">
+      Press a key on a JIS keyboard (no Shift) to jump to its slot.<br>
+      <kbd>⌘/Ctrl</kbd>+<kbd>Z</kbd> undo, <kbd>⌘/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo.<br>
+      Drawings save automatically in this browser.
+    </div>
+  </div>
+</main>
+
+<script>
+"use strict";
+const STORE = "arp-glyph-editor-v1";
+const LETTER_COUNT = 44;
+const GRID = 50;           // canvas units; canvas is 1000 x 1000 (one zenkaku cell)
+const MARGIN = 100;        // dashed inner guide
+
+// JIS main block. [code, legend, widthInUnits]. Codes are KeyboardEvent.code.
+// type: "slot" = letter slot, "mod" = fixed modifier, "off" = not part of the letterset.
+const SLOT = "slot", OFF = "off", MOD = "mod";
+const ROWS = [
+  [["Backquote","半/全",1,OFF],["Digit1","1"],["Digit2","2"],["Digit3","3"],["Digit4","4"],["Digit5","5"],["Digit6","6"],
+   ["Digit7","7"],["Digit8","8"],["Digit9","9"],["Digit0","0"],["Minus","-"],["Equal","^"],["IntlYen","¥"],["Backspace","BS",1,OFF]],
+  [["Tab","Tab",1.5,OFF],["KeyQ","Q"],["KeyW","W"],["KeyE","E"],["KeyR","R"],["KeyT","T"],["KeyY","Y"],["KeyU","U"],
+   ["KeyI","I"],["KeyO","O"],["KeyP","P"],["BracketLeft","@",1,MOD],["BracketRight","[",1,MOD],["Enter","Enter",1.5,OFF]],
+  [["CapsLock","英数",1.75,OFF],["KeyA","A"],["KeyS","S"],["KeyD","D"],["KeyF","F"],["KeyG","G"],["KeyH","H"],["KeyJ","J"],
+   ["KeyK","K"],["KeyL","L"],["Semicolon",";"],["Quote",":"],["Backslash","]"],["Enter2","",1.25,OFF]],
+  [["ShiftLeft","Shift",2.25,OFF],["KeyZ","Z"],["KeyX","X"],["KeyC","C"],["KeyV","V"],["KeyB","B"],["KeyN","N"],["KeyM","M"],
+   ["Comma",","],["Period","."],["Slash","/"],["IntlRo","\\"],["ShiftRight","Shift",1.75,OFF]],
+  [["ControlLeft","Ctrl",1.25,OFF],["MetaLeft","Win",1.25,OFF],["AltLeft","Alt",1.25,OFF],["NonConvert","無変換",1.25,OFF],
+   ["Space","",5,OFF],["Convert","変換",1.25,OFF],["KanaMode","かな",1.25,OFF],["AltRight","Alt",1.25,OFF],["ControlRight","Ctrl",1.25,OFF]],
+].map(row => row.map(([code, legend, w = 1, type = SLOT]) => ({ code, legend, w, type })));
+const MODS = { BracketLeft: { ch: "゛", name: "dakuten ゛ (U+309B): lowers tense level to 0" },
+               BracketRight: { ch: "゜", name: "handakuten ゜ (U+309C): raises tense level to 2" } };
+const SLOT_KEYS = ROWS.flat().filter(k => k.type === SLOT);
+
+// ---- state ----
+let glyphs = load();                 // { [code]: { strokes: [{ w, pts: [[x,y],...] }] } }
+const history = {};                  // { [code]: { undo: [], redo: [] } } snapshots, session only
+let selected = SLOT_KEYS[0].code;
+let tool = "pen", width = 70, snap = false, showGrid = false;
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch { return {}; }
+}
+function persist() { localStorage.setItem(STORE, JSON.stringify(glyphs)); }
+const strokesOf = code => glyphs[code]?.strokes ?? [];
+const hist = code => (history[code] ??= { undo: [], redo: [] });
+
+function commit(code, next) {
+  hist(code).undo.push(structuredClone(strokesOf(code)));
+  hist(code).redo = [];
+  if (next.length) glyphs[code] = { strokes: next }; else delete glyphs[code];
+  persist(); render();
+}
+
+// ---- geometry ----
+const r = n => Math.round(n * 10) / 10;
+function pathD(pts) {
+  if (pts.length === 1) { const [x, y] = pts[0]; return `M${r(x)} ${r(y)}l0.1 0`; }
+  if (pts.length === 2) return `M${r(pts[0][0])} ${r(pts[0][1])}L${r(pts[1][0])} ${r(pts[1][1])}`;
+  let d = `M${r(pts[0][0])} ${r(pts[0][1])}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [x, y] = pts[i], [nx, ny] = pts[i + 1];
+    d += `Q${r(x)} ${r(y)} ${r((x + nx) / 2)} ${r((y + ny) / 2)}`;
+  }
+  const [lx, ly] = pts.at(-1);
+  return d + `L${r(lx)} ${r(ly)}`;
+}
+// Ramer–Douglas–Peucker, so freehand strokes stay small and smooth.
+function simplify(pts, eps = 2.5) {
+  if (pts.length < 3) return pts;
+  const [a, b] = [pts[0], pts.at(-1)];
+  let max = 0, idx = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = distToSeg(pts[i], a, b);
+    if (d > max) { max = d; idx = i; }
+  }
+  if (max <= eps) return [a, b];
+  return [...simplify(pts.slice(0, idx + 1), eps).slice(0, -1), ...simplify(pts.slice(idx), eps)];
+}
+function distToSeg([px, py], [ax, ay], [bx, by]) {
+  const dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy;
+  const t = len ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len)) : 0;
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+const snapPt = ([x, y]) => snap ? [Math.round(x / GRID) * GRID, Math.round(y / GRID) * GRID] : [x, y];
+const clamp = ([x, y]) => [Math.max(0, Math.min(1000, x)), Math.max(0, Math.min(1000, y))];
+
+// ---- SVG output ----
+const strokesSvg = (strokes, color = "currentColor") => strokes.map(s =>
+  `<path d="${pathD(s.pts)}" stroke="${color}" stroke-width="${s.w}"/>`).join("");
+function glyphSvg(code) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000" data-arp-key="${code}">
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">${strokesSvg(strokesOf(code), "#000")}</g>
+</svg>
+`;
+}
+function sheetSvg() {
+  const U = 120, PAD = 10, G = 8, rows = ROWS.slice(0, 4);
+  let out = "", y = PAD, maxX = 0;
+  for (const row of rows) {
+    let x = PAD;
+    for (const k of row) {
+      const w = k.w * U + (k.w - 1) * G;
+      if (k.type !== OFF) {
+        out += `<rect x="${x}" y="${y}" width="${w}" height="${U}" rx="10" fill="#fff" stroke="#bbb" stroke-width="2"/>`;
+        out += `<text x="${x + 8}" y="${y + 18}" font-size="14" fill="#aaa" font-family="sans-serif">${esc(k.legend)}</text>`;
+        if (k.type === MOD) {
+          out += `<text x="${x + w / 2}" y="${y + U * 0.72}" font-size="${U * 0.6}" text-anchor="middle" fill="#000">${MODS[k.code].ch}</text>`;
+        } else {
+          const s = 0.8 * U / 1000;
+          out += `<g transform="translate(${x + 0.1 * U} ${y + 0.1 * U}) scale(${s})" fill="none" stroke-linecap="round" stroke-linejoin="round">${strokesSvg(strokesOf(k.code), "#000")}</g>`;
+        }
+      }
+      x += w + G;
+    }
+    maxX = Math.max(maxX, x);
+    y += U + G;
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${maxX - G + PAD} ${y - G + PAD}">
+<rect width="100%" height="100%" fill="#eee"/>${out}
+</svg>
+`;
+}
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function download(name, text, type) {
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([text], { type })), download: name });
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---- keyboard ----
+const kb = document.getElementById("kb");
+function renderKeyboard() {
+  kb.innerHTML = "";
+  for (const row of ROWS) {
+    const div = document.createElement("div");
+    div.className = "row";
+    for (const k of row) {
+      const el = document.createElement("div");
+      el.className = `key ${k.type}` + (k.code === selected ? " sel" : "");
+      el.style.width = `calc(var(--u) * ${k.w} + 4px * ${k.w - 1})`;
+      if (k.type === OFF) { el.textContent = k.legend; }
+      else {
+        el.innerHTML = `<span class="legend">${esc(k.legend)}</span>` + (k.type === MOD ? MODS[k.code].ch :
+          `<svg viewBox="0 0 1000 1000"><g fill="none" stroke-linecap="round" stroke-linejoin="round">${strokesSvg(strokesOf(k.code))}</g></svg>`);
+        el.title = k.type === MOD ? MODS[k.code].name : `${k.code} (JIS ${k.legend})`;
+        el.onclick = () => select(k.code);
+      }
+      div.append(el);
+    }
+    kb.append(div);
+  }
+  const n = SLOT_KEYS.filter(k => strokesOf(k.code).length).length;
+  const count = document.getElementById("count");
+  count.textContent = `${n} / ${LETTER_COUNT} letters drawn` + (n > LETTER_COUNT ? ` — over the limit by ${n - LETTER_COUNT}` : "");
+  count.classList.toggle("over", n > LETTER_COUNT);
+}
+function select(code) { selected = code; render(); }
+
+// ---- canvas ----
+const canvas = document.getElementById("canvas");
+const gStrokes = document.getElementById("strokes");
+const gPreview = document.getElementById("preview");
+const gGuides = document.getElementById("guides");
+
+function renderGuides() {
+  const c = "var(--line)";
+  let s = `<rect x="0" y="0" width="1000" height="1000" fill="none" stroke="${c}" stroke-width="4"/>`;
+  if (showGrid || snap) for (let i = GRID; i < 1000; i += GRID)
+    s += `<path d="M${i} 0V1000M0 ${i}H1000" stroke="${c}" stroke-width="1" opacity=".6"/>`;
+  s += `<rect x="${MARGIN}" y="${MARGIN}" width="${1000 - 2 * MARGIN}" height="${1000 - 2 * MARGIN}" fill="none" stroke="${c}" stroke-width="2" stroke-dasharray="12 10"/>`;
+  s += `<path d="M500 0V1000M0 500H1000" stroke="${c}" stroke-width="2" stroke-dasharray="4 10"/>`;
+  gGuides.innerHTML = s;
+}
+
+function renderCanvas() {
+  const mod = MODS[selected];
+  canvas.style.pointerEvents = mod ? "none" : "";
+  gStrokes.innerHTML = mod
+    ? `<text x="500" y="720" font-size="600" text-anchor="middle" fill="currentColor" stroke="none">${mod.ch}</text>`
+    : strokesSvg(strokesOf(selected));
+  const k = ROWS.flat().find(k => k.code === selected);
+  document.getElementById("info").innerHTML = mod
+    ? `<b>${mod.ch}</b> on JIS <b>${esc(k.legend)}</b> — ${mod.name}.<br>Fixed character; not drawable.`
+    : `Slot <b>${selected}</b> (JIS <b>${esc(k.legend)}</b>, unshifted) — ${strokesOf(selected).length} strokes`;
+  const h = hist(selected), dis = !!mod;
+  document.getElementById("undo").disabled = dis || !h.undo.length;
+  document.getElementById("redo").disabled = dis || !h.redo.length;
+  document.getElementById("clear").disabled = dis || !strokesOf(selected).length;
+  document.getElementById("export-one").disabled = dis || !strokesOf(selected).length;
+}
+
+function render() { renderKeyboard(); renderCanvas(); renderGuides(); }
+
+function toCanvas(e) {
+  const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(canvas.getScreenCTM().inverse());
+  return clamp([p.x, p.y]);
+}
+
+let drawing = null;
+canvas.addEventListener("pointerdown", e => {
+  if (MODS[selected] || e.button !== 0) return;
+  canvas.setPointerCapture(e.pointerId);
+  const p = toCanvas(e);
+  if (tool === "erase") { eraseAt(p); return; }
+  drawing = { pts: [tool === "line" ? snapPt(p) : p] };
+  drawPreview();
+});
+canvas.addEventListener("pointermove", e => {
+  if (!drawing) return;
+  const p = toCanvas(e);
+  if (tool === "line") drawing.pts[1] = snapPt(p);
+  else drawing.pts.push(p);
+  drawPreview();
+});
+const finish = () => {
+  if (!drawing) return;
+  let pts = drawing.pts;
+  if (tool === "pen") pts = simplify(pts).map(snap ? snapPt : x => x);
+  drawing = null; gPreview.innerHTML = "";
+  commit(selected, [...strokesOf(selected), { w: width, pts }]);
+};
+canvas.addEventListener("pointerup", finish);
+canvas.addEventListener("pointercancel", finish);
+
+function drawPreview() {
+  gPreview.innerHTML = `<path d="${pathD(drawing.pts)}" stroke-width="${width}" opacity=".85"/>`;
+}
+function eraseAt(p) {
+  const strokes = strokesOf(selected);
+  for (let i = strokes.length - 1; i >= 0; i--) {
+    const s = strokes[i];
+    const hit = s.pts.length === 1 ? Math.hypot(p[0] - s.pts[0][0], p[1] - s.pts[0][1]) :
+      Math.min(...s.pts.slice(1).map((q, j) => distToSeg(p, s.pts[j], q)));
+    if (hit <= s.w / 2 + 10) { commit(selected, strokes.filter((_, j) => j !== i)); return; }
+  }
+}
+
+function undo() {
+  const h = hist(selected); if (!h.undo.length) return;
+  h.redo.push(structuredClone(strokesOf(selected)));
+  const prev = h.undo.pop();
+  if (prev.length) glyphs[selected] = { strokes: prev }; else delete glyphs[selected];
+  persist(); render();
+}
+function redo() {
+  const h = hist(selected); if (!h.redo.length) return;
+  h.undo.push(structuredClone(strokesOf(selected)));
+  const next = h.redo.pop();
+  if (next.length) glyphs[selected] = { strokes: next }; else delete glyphs[selected];
+  persist(); render();
+}
+
+// ---- controls ----
+document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => {
+  tool = b.dataset.tool;
+  document.querySelectorAll("[data-tool]").forEach(x => x.classList.toggle("on", x === b));
+});
+const widthEl = document.getElementById("width");
+const showWidth = () => document.getElementById("width-val").textContent = `(${width})`;
+widthEl.oninput = () => { width = +widthEl.value; showWidth(); };
+document.getElementById("snap").onclick = e => { snap = !snap; e.target.classList.toggle("on", snap); renderGuides(); };
+document.getElementById("grid").onclick = e => { showGrid = !showGrid; e.target.classList.toggle("on", showGrid); renderGuides(); };
+document.getElementById("undo").onclick = undo;
+document.getElementById("redo").onclick = redo;
+document.getElementById("clear").onclick = () => commit(selected, []);
+document.getElementById("export-one").onclick = () => download(`arp-${selected}.svg`, glyphSvg(selected), "image/svg+xml");
+document.getElementById("export-sheet").onclick = () => download("arp-keyboard.svg", sheetSvg(), "image/svg+xml");
+document.getElementById("save-json").onclick = () =>
+  download("arp-glyphs.json", JSON.stringify({ format: "arp-glyphs", version: 1, viewBox: [0, 0, 1000, 1000], glyphs }, null, 1), "application/json");
+document.getElementById("load-json").onchange = async e => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.format !== "arp-glyphs" || typeof data.glyphs !== "object") throw new Error("not an ARP glyph project");
+    const valid = new Set(SLOT_KEYS.map(k => k.code));
+    glyphs = Object.fromEntries(Object.entries(data.glyphs).filter(([k, g]) => valid.has(k) && Array.isArray(g?.strokes)));
+    for (const k in history) delete history[k];
+    persist(); render();
+  } catch (err) {
+    document.getElementById("info").textContent = `Could not load: ${err.message}`;
+  }
+};
+
+document.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.target.matches("input")) return;
+  if (ROWS.flat().some(k => k.code === e.code && k.type !== OFF)) { e.preventDefault(); select(e.code); }
+});
+
+showWidth();
+render();
+</script>
+</body>
+</html>

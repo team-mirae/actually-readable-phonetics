@@ -1,66 +1,84 @@
 import { describe, expect, it } from "vitest";
 import {
-  ArpParseError,
-  compose,
-  decompose,
-  parseWord,
-  SYLLABLE_COUNT,
-  syllableToAscii,
-  toIpa,
-  transcribe,
+  DAKUTEN,
+  DAKUTEN_KEY,
+  HANDAKUTEN,
+  HANDAKUTEN_KEY,
+  JIS_KEYS,
+  KEYMAP,
+  LETTER_COUNT,
+  LETTER_KEYS,
+  LETTERSET_SIZE,
+  keyToChar,
+  letter,
+  letterIndex,
+  tokenize,
 } from "../src/index.js";
 
-const ascii = (w: string) => parseWord(w).map(syllableToAscii);
-
-describe("parseWord", () => {
-  it("splits open syllables", () => {
-    expect(ascii("hana")).toEqual(["ha", "na"]);
-    expect(ascii("sakura")).toEqual(["sa", "ku", "ra"]);
+describe("letterset", () => {
+  it("has exactly 46 characters: 44 letters + ゛゜", () => {
+    expect(LETTER_COUNT).toBe(44);
+    expect(LETTERSET_SIZE).toBe(46);
+    expect(DAKUTEN).toBe("゛");
+    expect(HANDAKUTEN).toBe("゜");
   });
 
-  it("keeps a coda when no vowel follows", () => {
-    expect(ascii("bang")).toEqual(["bang"]);
-    expect(ascii("kimchi")).toEqual(["kim", "chi"]);
-    expect(ascii("saN")).toEqual(["saN"]);
-  });
-
-  it("honours explicit breaks", () => {
-    expect(ascii("han.a")).toEqual(["han", "a"]);
-    // Greedy maximal onset reads "hangeul" as ha.ngeul; 한글 needs a break.
-    expect(ascii("hangeul")).toEqual(["ha", "ngeul"]);
-    expect(ascii("han.geul")).toEqual(["han", "geul"]);
-  });
-
-  it("reads Korean tense and aspirated onsets", () => {
-    expect(ascii("ppang")).toEqual(["ppang"]);
-    expect(ascii("k'al")).toEqual(["k'al"]);
-  });
-
-  it("rejects vowelless input", () => {
-    expect(() => parseWord("str")).toThrow(ArpParseError);
+  it("round-trips letter codepoints", () => {
+    for (let i = 0; i < LETTER_COUNT; i++) expect(letterIndex(letter(i))).toBe(i);
+    expect(() => letter(LETTER_COUNT)).toThrow(RangeError);
+    expect(letterIndex("a")).toBeUndefined();
   });
 });
 
-describe("compose", () => {
-  it("round-trips every syllable", () => {
-    for (const w of ["a", "ka", "ppang", "saN", "thing", "eui"]) {
-      for (const s of parseWord(w)) expect(decompose(compose(s))).toEqual(s);
+describe("tense level", () => {
+  const a = letter(0);
+  const b = letter(1);
+
+  it("defaults to 1, ゛ lowers to 0, ゜ raises to 2", () => {
+    expect(tokenize(a)).toMatchObject([{ kind: "letter", index: 0, level: 1 }]);
+    expect(tokenize(a + DAKUTEN)).toMatchObject([{ kind: "letter", level: 0 }]);
+    expect(tokenize(a + HANDAKUTEN)).toMatchObject([{ kind: "letter", level: 2 }]);
+  });
+
+  it("applies only to the letter right before it", () => {
+    expect(tokenize(a + b + DAKUTEN)).toMatchObject([
+      { index: 0, level: 1 },
+      { index: 1, level: 0 },
+    ]);
+  });
+
+  it("leaves stray or doubled modifiers as text, like kana", () => {
+    expect(tokenize(DAKUTEN + a)).toMatchObject([
+      { kind: "text", source: DAKUTEN },
+      { kind: "letter", level: 1 },
+    ]);
+    expect(tokenize(a + DAKUTEN + HANDAKUTEN)).toMatchObject([
+      { kind: "letter", level: 0 },
+      { kind: "text", source: HANDAKUTEN },
+    ]);
+  });
+});
+
+describe("JIS keymap (golden rule: no Shift on JIS)", () => {
+  it("uses the 48 unshifted kana keys", () => {
+    expect(JIS_KEYS).toHaveLength(48);
+    expect(new Set(JIS_KEYS).size).toBe(48);
+  });
+
+  it("puts ゛゜ on the JIS @ and [ keys", () => {
+    expect(keyToChar(DAKUTEN_KEY)).toBe(DAKUTEN);
+    expect(keyToChar(HANDAKUTEN_KEY)).toBe(HANDAKUTEN);
+    expect(LETTER_KEYS).toHaveLength(46);
+  });
+
+  it("maps at most 44 keys, each to a distinct letter, all unshifted", () => {
+    const entries = Object.entries(KEYMAP);
+    expect(entries.length).toBeLessThanOrEqual(LETTER_COUNT);
+    for (const [key, i] of entries) {
+      expect(LETTER_KEYS).toContain(key);
+      expect(i).toBeGreaterThanOrEqual(0);
+      expect(i).toBeLessThan(LETTER_COUNT);
     }
-    expect(SYLLABLE_COUNT).toBeGreaterThan(0);
-  });
-
-  it("emits one codepoint per syllable", () => {
-    expect([...transcribe("sakura")]).toHaveLength(3);
-  });
-});
-
-describe("transcribe", () => {
-  it("makes spaces optional", () => {
-    expect(transcribe("hana bi", { spaces: false })).toBe(transcribe("hanabi"));
-    expect(transcribe("hana bi")).toContain("　");
-  });
-
-  it("renders back to IPA for debugging", () => {
-    expect(toIpa(transcribe("hana bi"))).toBe("ha.na bi");
+    expect(new Set(entries.map(([, i]) => i)).size).toBe(entries.length);
   });
 });

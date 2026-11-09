@@ -2,27 +2,33 @@
 
 An experimental script that can write **every syllable of modern English, Korean and Japanese**, and that works with ordinary digital text.
 
-## Idea
+## Design
 
-1. **Write it in plain ASCII.** ARP source text is ordinary ASCII (`hana bi`, `ppang`, `saN`). It survives every keyboard, editor, chat app and search box.
-2. **Render it where supported.** A parser reads that text and turns it into ARP script: a **zenkaku** (full-width) writing system with one square cell per syllable, built from onset + vowel + coda like a Hangul block. Since every syllable is its own cell, **spaces are optional**, as in Japanese.
+- **46 characters, no more.** 44 letters plus exactly **゛** (U+309B) and **゜** (U+309C).
+- **Tense levels, copied from Japanese.** Every letter is level 1 by default. ゛ after a letter lowers it to 0 and ゜ raises it to 2, the same way they apply to kana.
+- **Golden rule: typeable on JIS without ever pressing Shift.** All 46 characters sit on unshifted keys of the JIS kana layout, with ゛ and ゜ on the same keys as on a JIS kana keyboard (`@` and `[`). US ANSI and ISO layouts will use the Shift layer.
+- **Zenkaku.** Full-width characters; spaces between words are optional.
+- **Plain text everywhere.** Letters are stored as Private Use Area codepoints until ARP has a Unicode allocation. A bulkier **compatibility mode** that writes ARP with Latin, Hangul and kana is planned.
+- Sounds that are merged or unused in modern speech are left out on purpose.
 
-Sounds that are merged or no longer used in modern speech are left out on purpose (Korean ㅐ/ㅔ, for example, are one vowel).
+The letters themselves (shapes, sounds, keys) are not designed yet. See [`docs/spec.md`](docs/spec.md).
 
-## Status
+## Glyph editor
 
-Very early. The phoneme inventory and ASCII notation in [`src/inventory.ts`](src/inventory.ts) are **provisional**. See [`docs/spec.md`](docs/spec.md) for the design and the open questions.
+[`tools/glyph-editor/index.html`](tools/glyph-editor/index.html) is a single-file drawing tool. Open it in a browser; no build or server needed.
 
-There is no font yet. Syllables are encoded as Private Use Area codepoints (U+F0000 and up), so the output looks like tofu (empty boxes) until a font exists. Use `toIpa()` to read it back.
+- Shows an empty JIS keyboard with only ゛ and ゜ in place. Click a key, or press it on a JIS keyboard, to draw its letter.
+- Pen, straight line, erase stroke, stroke width, snap to grid, undo/redo.
+- Drawings save automatically in the browser. **Save project** / **Load project** exchange a `.json` file.
+- **Download this glyph SVG** exports one 1000×1000 glyph; **Download sheet SVG** exports the whole keyboard.
+- Counts drawn letters against the 44 limit.
 
-## Usage
+## Library
 
 ```ts
-import { transcribe, toIpa } from "actually-readable-phonetics";
+import { letter, tokenize, DAKUTEN, HANDAKUTEN } from "actually-readable-phonetics";
 
-const script = transcribe("hana bi");      // 3 full-width syllable cells + U+3000
-transcribe("hana bi", { spaces: false });  // same cells, no space
-toIpa(script);                             // "ha.na bi"
+tokenize(letter(0) + DAKUTEN);  // [{ kind: "letter", index: 0, level: 0, ... }]
 ```
 
 ## Development
@@ -36,4 +42,4 @@ npm run build     # emits dist/
 
 ## License
 
-[CC0 1.0](LICENSE): public domain. Use the script, the notation and the code for anything.
+[CC0 1.0](LICENSE): public domain.
